@@ -1,0 +1,27 @@
+# @package _global_
+# Held-out upper age bands, within every study. Invoke as:
+#   python scripts/run_holdout.py +experiment=holdout_age
+#
+# Conditional by construction: log_eir stays informed by each study's training
+# rows, so what is tested is age structure -- which is what an immunity model
+# actually claims to explain. from_age must fall between age brackets: the
+# site-age effect v_jk is integrated out at the cell level, so msinf.splits
+# refuses a boundary that cuts an incidence cell in half.
+#
+# This split is deterministic, so holdout.seed does nothing here: there is only
+# one fold. Sweep run.seed instead to measure the sampler's own noise, which is
+# the floor any candidate difference has to clear.
+#
+#   python scripts/run_holdout.py -m +experiment=holdout_age run.seed=1,2,3,4,5
+
+holdout:
+  kind: age_band
+  from_age: 5.0
+
+mcmc:
+  num_warmup: 400
+  num_samples: 400
+  num_chains: 4
+
+run:
+  precision: f64

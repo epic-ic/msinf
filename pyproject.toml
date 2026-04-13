@@ -1,0 +1,59 @@
+[project]
+name = "msinf"
+version = "0.1.0"
+description = "Malaria simulation inference comparison code (Griffin-style MCMC reproduction)"
+requires-python = ">=3.11"
+dependencies = [
+  "numpy>=1.26",
+  "pandas>=2.2",
+  "jax>=0.4.30",
+  "jaxlib>=0.4.30",
+  "distrax>=0.1.5",
+  "matplotlib>=3.9",
+  "scipy>=1.13",
+  "numpyro>=0.15",
+  "hydra-core>=1.3",
+  "arviz>=0.18",
+  "pyyaml>=6.0",
+  # feat/searchable publishes the age grid, the demography recursion and the
+  # injectable immunity block that msinf.curves and msinf.demography rely on.
+  "dmeq @ git+https://github.com/giovannic/dmeq.git@feat/searchable",
+  "blackjax>=1.6.2",
+  "optax>=0.2.8",
+]
+
+[project.optional-dependencies]
+dev = ["ruff==0.16.10", "pyright>=1.1.380", "pytest>=8.2"]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 120
+
+[tool.pyright]
+pythonVersion = "3.11"
+venvPath = "."
+venv = ".venv"
+include = ["src", "scripts"]
+# The pandas and jax stubs reject most idiomatic Series/ndarray/Array mixing,
+# so these four checks were nearly all false positives. Everything else stays on.
+reportArgumentType = false
+reportCallIssue = false
+reportAttributeAccessIssue = false
+reportIndexIssue = false
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+# tests/fixtures.py is imported by the backend tests as a plain module.
+pythonpath = ["tests"]
+# Slow tests are skipped by default; run them with `pytest -m slow`, or
+# everything with `pytest -m ""`.
+addopts = "-m 'not slow'"
+markers = ["slow: runs real fits (minutes, not seconds)"]

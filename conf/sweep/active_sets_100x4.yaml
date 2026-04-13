@@ -1,0 +1,18 @@
+# @package _global_
+# 100/100 x 4 sweep across active core-parameter blocks.
+#
+# Blocks:
+# - blood-stage: IB0,b0,kb,ub
+# - clinical: IC0,PM,dm,kc,phi0,phi1,uc
+# - detection (remaining core): ID0,ad0,cU,d1,fd0,gd,kd,ud
+
+hydra:
+  mode: MULTIRUN
+  sweeper:
+    params:
+      core.active_core_csv: '"none","IB0,b0,kb,ub","IC0,PM,dm,kc,phi0,phi1,uc","ID0,ad0,cU,d1,fd0,gd,kd,ud","IB0,b0,kb,ub,IC0,PM,dm,kc,phi0,phi1,uc","IB0,b0,kb,ub,IC0,PM,dm,kc,phi0,phi1,uc,ID0,ad0,cU,d1,fd0,gd,kd,ud"'
+
+mcmc:
+  num_warmup: 100
+  num_samples: 100
+  num_chains: 4

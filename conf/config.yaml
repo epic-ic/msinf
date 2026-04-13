@@ -1,0 +1,88 @@
+defaults:
+  - sampler: nuts
+  - _self_
+
+hydra:
+  job:
+    chdir: true
+  run:
+    dir: outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
+  sweep:
+    dir: multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    subdir: ${hydra.job.num}
+
+data:
+  data_csv: artifacts/numpyro_jamie_100x4/study_data_2014.csv
+  eir_priors_csv: artifacts/inputs/eir_site_priors_griffin2014.csv
+  reference_draws_csv: ../malariasimulation/data-raw/parameter_draws_pf.csv
+  ft_priors_csv: null
+  # Per-site WPP death rates on the model age grid, built by
+  # scripts/demography/to_griffin_grid.py. null keeps dmeq's uniform default
+  # rate, which is what every run before those tables existed used, so the
+  # default reproduces those numbers exactly.
+  # Set to site_mortality_griffin_grid.csv for the WPP demography.
+  mortality_csv: null
+
+run:
+  outdir: null
+  seed: 42
+  collect_warmup: true
+  # Float precision for the whole pipeline: f32 | f64. Sets jax_enable_x64 at
+  # process entry; every float array, the ODE solve and the diagnostics honour it.
+  precision: f32
+
+mcmc:
+  num_warmup: 800
+  num_samples: 800
+  num_chains: 4
+  chain_method: parallel
+  max_tree_depth: 10
+  # griffin:    Griffin-refit starts by parameter name (Hydra path only)
+  # median:     init_to_median, for parameters with no known-good values
+  # default:    NumPyro's own initializer
+  # pathfinder: seed each chain from a draw of a Pathfinder approximation
+  init_strategy: griffin
+
+fit:
+  # Which backend produces the posterior: mcmc | pathfinder | fullrank.
+  # mcmc runs the kernel `sampler` selects.
+  backend: mcmc
+  pathfinder:
+    maxiter: 30
+    maxcor: 10
+    # Draws taken when Pathfinder is only seeding chains (khat needs > num_chains).
+    draws: 200
+  vi:
+    steps: 5000
+    learning_rate: 0.01
+    # Monte Carlo samples per ELBO gradient; the multiplier on a step's cost.
+    elbo_samples: 8
+    draws: 1000
+    # Resample the draws against their PSIS weights before scoring.
+    psir: false
+
+holdout:
+  # none | study | age_band (see msinf/splits.py). none is a whole-data fit.
+  kind: none
+  # Fold seed; sweep it to measure between-fold noise.
+  seed: 42
+  n_studies: 3      # kind=study
+  from_age: 5.0     # kind=age_band
+
+eval:
+  # Posterior draws used for the (ODE-bound) scoring pass, and predictive
+  # replicates drawn for the PPC and the randomised PIT.
+  n_score_draws: 200
+  n_replicates: 200
+  figures: true
+
+priors:
+  # Core biological priors: xi (subsequent refit) or griffin (published SI).
+  name: xi
+
+core:
+  # Comma-delimited string. Example: "IC0,kc,phi0,phi1,uc"
+  # Use "none" for EIR-only core block.
+  active_core_csv: null
+  # Optional inverse selector, comma-delimited. Example: "b0,IB0,kb"
+  inactive_core_csv: null

@@ -1,0 +1,24 @@
+# @package _global_
+# Held-out studies. Invoke as: python scripts/run_holdout.py +experiment=holdout_study
+#
+# The blunter of the two splits: a held-out study's log_eir sits on its prior
+# (sd 0.3-0.8 on the log scale, priors.EIR_LOG_SD_BY_CATEGORY) and that variance
+# may swamp the difference between two reasonable candidates. Measure the
+# between-fold spread before trusting it to rank anything -- the sweeper gives
+# that for free:
+#
+#   python scripts/run_holdout.py -m +experiment=holdout_study holdout.seed=1,2,3,4,5
+
+holdout:
+  kind: study
+  n_studies: 3
+
+mcmc:
+  num_warmup: 400
+  num_samples: 400
+  num_chains: 4
+
+run:
+  # A novel curve family at f32 through two sequential scan recursions produces
+  # NaNs, and the held-out scoring pass re-runs those recursions per draw.
+  precision: f64

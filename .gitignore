@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+outputs/
+artifacts/
+*.rds
+*.csv
+*.parquet
+.DS_Store
+
+*.egg-info/
