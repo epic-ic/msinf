@@ -2,6 +2,8 @@
 name = "msinf"
 version = "0.1.0"
 description = "Malaria simulation inference comparison code (Griffin-style MCMC reproduction)"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = [
   "numpy>=1.26",
@@ -47,7 +49,7 @@ reportAttributeAccessIssue = false
 reportIndexIssue = false
 
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.pytest.ini_options]
