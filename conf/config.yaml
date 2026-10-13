@@ -12,7 +12,7 @@ hydra:
     subdir: ${hydra.job.num}
 
 data:
-  data_csv: artifacts/numpyro_jamie_100x4/study_data_2014.csv
+  data_csv: artifacts/inputs/study_data_2014.csv
   eir_priors_csv: artifacts/inputs/eir_site_priors_griffin2014.csv
   reference_draws_csv: ../malariasimulation/data-raw/parameter_draws_pf.csv
   ft_priors_csv: null

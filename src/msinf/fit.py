@@ -45,7 +45,6 @@ from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-import blackjax
 import jax
 import numpy as np
 import numpyro
@@ -158,6 +157,8 @@ def pathfinder_approximation(
     takes unconstrained ``init_params``, and :meth:`Unconstrained.constrain_batch`
     takes unconstrained draws.
     """
+    import blackjax
+
     k_fit, k_sample = jax.random.split(jax.random.PRNGKey(seed))
     state, _ = blackjax.vi.pathfinder.approximate(
         k_fit,
@@ -273,6 +274,8 @@ def fit_fullrank(cfg: NumpyroConfig, model_kwargs: dict, active_core_params: tup
     that is the point: a step costs ``vi_elbo_samples`` gradients against NUTS's
     one-per-leapfrog, and there are far fewer steps than a NUTS fit has leapfrogs.
     """
+    import blackjax
+
     started = time.perf_counter()
     unconstrained = build_unconstrained(cfg, model_kwargs, active_core_params)
     optimizer = optax.adam(cfg.vi_learning_rate)
@@ -291,9 +294,7 @@ def fit_fullrank(cfg: NumpyroConfig, model_kwargs: dict, active_core_params: tup
     keys = jax.random.split(jax.random.PRNGKey(cfg.seed), cfg.vi_steps)
     state, elbo_trace = jax.lax.scan(scan_step, state, keys)
 
-    z_draws = blackjax.vi.fullrank_vi.sample(
-        jax.random.PRNGKey(cfg.seed + 1), state, cfg.vi_draws
-    )
+    z_draws = blackjax.vi.fullrank_vi.sample(jax.random.PRNGKey(cfg.seed + 1), state, cfg.vi_draws)
     draws = unconstrained.constrain_batch(z_draws)
     jax.block_until_ready(z_draws)
     seconds = time.perf_counter() - started
@@ -309,7 +310,7 @@ def fit_fullrank(cfg: NumpyroConfig, model_kwargs: dict, active_core_params: tup
     # The last 1% of the trace rather than its final point: one Monte Carlo ELBO
     # estimate is noisy at vi_elbo_samples draws, and the tail mean is what says
     # where the optimiser settled.
-    tail = elbo_trace[-max(1, len(elbo_trace) // 100):]
+    tail = elbo_trace[-max(1, len(elbo_trace) // 100) :]
     return FitResult(
         backend="fullrank",
         draws=draws,
@@ -386,9 +387,7 @@ def run_mcmc(
             progress_bar=cfg.progress_bar,
         )
         mcmc_w.warmup(key_warmup, collect_warmup=True, init_params=init_params, **sampler_kwargs)
-        warmup_samples = {
-            f"warmup__{k}": np.asarray(v) for k, v in mcmc_w.get_samples(group_by_chain=True).items()
-        }
+        warmup_samples = {f"warmup__{k}": np.asarray(v) for k, v in mcmc_w.get_samples(group_by_chain=True).items()}
         # Seed the main MCMC from the post-warmup state so run() skips re-warmup.
         # init_params is deliberately not repeated here: warmup already consumed
         # it, and the post-warmup state is where the chains actually are.
@@ -459,8 +458,10 @@ def run_inference(outdir: Path, cfg: NumpyroConfig) -> dict[str, str]:
     by_chain = result.draws_by_chain or {k: v[None, ...] for k, v in result.draws.items()}
     print_summary(by_chain, prob=0.9)
     if result.draws_by_chain is None:
-        print(f"[{result.backend}] r_hat/n_eff above are not meaningful for a "
-              f"variational fit; khat={result.khat:.3f}, elbo={result.elbo:.2f}")
+        print(
+            f"[{result.backend}] r_hat/n_eff above are not meaningful for a "
+            f"variational fit; khat={result.khat:.3f}, elbo={result.elbo:.2f}"
+        )
     return {"samples": str(sample_path), "resolved_config": str(config_path)}
 
 
