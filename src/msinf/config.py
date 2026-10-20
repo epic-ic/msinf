@@ -42,7 +42,13 @@ class NumpyroConfig:
     #   whose parameters have no known-good values to init to
     # - "default": NumPyro default initializer
     # - "pathfinder": seed each chain from a draw of a Pathfinder approximation
+    # - "griffin_jitter": the "griffin" starts for every site that has one,
+    #   displaced per chain by init_jitter on the unconstrained scale, and
+    #   init_to_median for the rest -- so it also serves a candidate model
     init_strategy: str = "griffin"
+    # Standard deviation of the per-chain displacement "griffin_jitter" applies,
+    # on the unconstrained scale (a log or logit for most sites).
+    init_jitter: float = 0.5
     # Which backend produces the posterior: mcmc | pathfinder | fullrank.
     # "mcmc" runs whichever kernel `sampler` names; the variational backends
     # ignore `sampler`.
