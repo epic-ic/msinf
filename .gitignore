@@ -3,11 +3,12 @@
 __pycache__/
 *.pyc
 outputs/
-artifacts/
+artifacts/*
 *.rds
 *.csv
 *.parquet
 .DS_Store
 test.ipynb
-
+!/artifacts/inputs/
+!/artifacts/inputs/**
 *.egg-info/
