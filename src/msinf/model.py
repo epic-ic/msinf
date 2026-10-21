@@ -87,47 +87,21 @@ def bin_streams(*, site_curve_pair, prop, ages, streams):
     }
 
 
-def gibbs_split(gibbs_sites, n_site: int) -> tuple[np.ndarray, np.ndarray]:
-    """``(gibbs_idx, hmc_idx)``: the sites a Gibbs step owns, and the rest."""
-    g = np.asarray(tuple(gibbs_sites), dtype=int)
-    return g, np.setdiff1d(np.arange(n_site), g)
-
-
-def sample_log_eir(log_eir_hat, sigma_eir, n_site: int, gibbs_sites=()):
-    """The per-site log EIR, optionally split for :class:`numpyro.infer.HMCGibbs`.
-
-    With no Gibbs sites this is the plain ``log_eir`` sample site. Otherwise the
-    Gibbs-owned sites are sampled as ``log_eir_gibbs`` and the rest as
-    ``log_eir_hmc`` -- HMCGibbs partitions by sample-site name -- and the two are
-    scattered back into a ``log_eir`` deterministic, so every draw still carries
-    ``log_eir`` in site order and nothing downstream sees the split. The prior is
-    the same independent Normal either way.
-    """
-    if not gibbs_sites:
-        with numpyro.plate("site", n_site):
-            return numpyro.sample("log_eir", dist.Normal(log_eir_hat, sigma_eir))
-    g, h = gibbs_split(gibbs_sites, n_site)
-    z_h = numpyro.sample("log_eir_hmc", dist.Normal(log_eir_hat[h], sigma_eir[h]).to_event(1))
-    z_g = numpyro.sample("log_eir_gibbs", dist.Normal(log_eir_hat[g], sigma_eir[g]).to_event(1))
-    log_eir = jnp.zeros(n_site, dtype=z_h.dtype).at[h].set(z_h).at[g].set(z_g)
-    return numpyro.deterministic("log_eir", log_eir)
-
-
 def hierarchical_model(numer_inc, denom_inc, study_inc, site_inc, agek_inc, age0_inc, age1_inc, case_det_inc,
                        numer_prev_m, denom_prev_m, study_prev_m, site_prev_m, age0_prev_m, age1_prev_m,
                        log_eir_hat, sigma_eir, ft_alpha, ft_beta, site_to_study, prop_site, mu_site,
                        n_study: int, n_site: int, n_age_groups: int, obs_priors: dict,
-                       parameters, curves, gibbs_eir_sites: tuple[int, ...] = ()):
+                       parameters, curves):
     """``parameters``/``curves`` are a :class:`msinf.curves.CurveProvider`'s pair,
-    supplied by :func:`build_model_kwargs`. ``gibbs_eir_sites`` splits ``log_eir``
-    for an HMCGibbs kernel (:func:`sample_log_eir`)."""
+    supplied by :func:`build_model_kwargs`."""
     params = parameters()
 
     # ---- Fixed observational parameters ------------------------------------
     rW = sample_param("rW", obs_priors["rW"])
     rP = sample_param("rP", obs_priors["rP"])
 
-    log_eir = sample_log_eir(log_eir_hat, sigma_eir, n_site, gibbs_eir_sites)
+    with numpyro.plate("site", n_site):
+        log_eir = numpyro.sample("log_eir", dist.Normal(log_eir_hat, sigma_eir))
 
     sigma_c = numpyro.sample("sigma_c", dist.HalfNormal(asfloat(0.5)))
     sigma_p = numpyro.sample("sigma_p", dist.HalfNormal(asfloat(0.5)))
@@ -330,7 +304,6 @@ def build_model_kwargs(
     mu_site, prop_site = resolve_demography(df=df, mortality_csv=cfg.mortality_csv, n_site=n_site)
 
     model_kwargs = dict(
-        gibbs_eir_sites=resolve_gibbs_eir_sites(cfg, n_site),
         **encode(df_train),
         log_eir_hat=asfloat(site_eir_mu),
         sigma_eir=asfloat(site_eir_sigma),
@@ -349,36 +322,6 @@ def build_model_kwargs(
     if df_hold is not None:
         model_kwargs["holdout"] = encode(df_hold)
     return model_kwargs, active_core_params, fixed_core_values
-
-
-def resolve_gibbs_eir_sites(cfg: NumpyroConfig, n_site: int) -> tuple[int, ...]:
-    """The validated ``gibbs_eir_sites``, or ``()`` where no HMCGibbs kernel runs.
-
-    Only an MCMC fit under NUTS has a Gibbs step to own the split sites; every
-    other backend gets the unsplit model, so its draws are unchanged.
-    """
-    sites = tuple(int(s) for s in cfg.gibbs_eir_sites)
-    if not sites:
-        return ()
-    if len(set(sites)) != len(sites) or not all(0 <= s < n_site for s in sites):
-        raise ValueError(f"gibbs_eir_sites must be distinct site indices in [0, {n_site}); got {sites}")
-    if len(sites) == n_site:
-        raise ValueError("gibbs_eir_sites cannot be every site: NUTS needs some log_eir to sample")
-    backend = str(cfg.fit_backend).strip().lower()
-    if backend != "mcmc":
-        return ()
-    if str(cfg.sampler).strip().lower() != "nuts":
-        raise ValueError("gibbs_eir_sites needs sampler='nuts': HMCGibbs wraps an HMC-family kernel")
-    return tuple(sorted(sites))
-
-
-def split_log_eir_values(values: dict, gibbs_sites, n_site: int) -> dict:
-    """Init values keyed for the split ``log_eir`` sites, where there are any."""
-    if not gibbs_sites or "log_eir" not in values:
-        return values
-    g, h = gibbs_split(gibbs_sites, n_site)
-    log_eir = jnp.broadcast_to(jnp.asarray(values["log_eir"]), (n_site,))
-    return {**values, "log_eir_hmc": log_eir[h], "log_eir_gibbs": log_eir[g]}
 
 
 def model_kwargs_for_sampler(model_kwargs: dict) -> dict:
@@ -469,7 +412,6 @@ def resolve_init_strategy(
             n_site=model_kwargs["n_site"],
             n_age_groups=model_kwargs["n_age_groups"],
         )
-        values = split_log_eir_values(values, model_kwargs.get("gibbs_eir_sites", ()), model_kwargs["n_site"])
         if init_mode == "griffin":
             return init_to_value(values=values)
         return init_to_jittered_value(values=values, scale=cfg.init_jitter)
