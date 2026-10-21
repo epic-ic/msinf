@@ -63,6 +63,7 @@ def numpyro_config(cfg: DictConfig, *, progress_bar: bool = True) -> NumpyroConf
         mortality_csv=_abs(cfg.data.get("mortality_csv", None)),
         init_strategy=str(cfg.mcmc.init_strategy),
         init_jitter=float(cfg.mcmc.get("init_jitter", 0.5)),
+        het_nodes=int(cfg.curves.get("het_nodes", 40)),
         prior_family=str(cfg.priors.name),
         collect_warmup=bool(cfg.run.collect_warmup),
         seed=int(cfg.run.seed),
