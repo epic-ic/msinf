@@ -32,8 +32,8 @@ run:
   precision: f32
 
 mcmc:
-  num_warmup: 800
-  num_samples: 800
+  num_warmup: 400
+  num_samples: 400
   num_chains: 4
   chain_method: parallel
   max_tree_depth: 10
@@ -41,7 +41,15 @@ mcmc:
   # median:     init_to_median, for parameters with no known-good values
   # default:    NumPyro's own initializer
   # pathfinder: seed each chain from a draw of a Pathfinder approximation
-  init_strategy: griffin
+  # griffin_jitter: griffin starts, displaced per chain by init_jitter (unconstrained sd)
+  init_strategy: griffin_jitter
+  init_jitter: 0.5
+
+curves:
+  # Biting-heterogeneity quadrature nodes in the Griffin curves. dmeq's own 10
+  # ripples the curves in log EIR and puts spurious modes in log_eir; 40 agrees
+  # with 100. 10 reproduces runs from before this option exactly.
+  het_nodes: 40
 
 fit:
   # Which backend produces the posterior: mcmc | pathfinder | fullrank.

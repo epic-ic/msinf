@@ -136,3 +136,28 @@ python scripts/likelihood_diag.py --run-dir outputs/<date>/<time>
 
 Works with any run directory; pass `--precision f64` to match a run fitted at
 double precision.
+
+## Age trajectories for all studies
+
+```python
+from msinf.plotting import plot_all_study_trajectories
+
+pngs = plot_all_study_trajectories(
+    "outputs/<date>/<time>/numpyro_jamie_samples.npz",
+    "artifacts/inputs/study_data_2014.csv",
+    outdir="artifacts/figures/trajectories",
+    effects="conditional",
+    n_draws=100,
+    max_age=20,
+    ncols=4,
+)
+```
+
+Returns paths under `pngs["incidence"]` and `pngs["prevalence"]`. Each PNG
+contains a panel for every site with observations for that outcome. Blue
+diamonds show observations, green curves and shading show the posterior median
+and pointwise 95% credible interval, and orange diamonds show fitted
+population-weighted age-group averages. Conditional study effects and incidence
+case-detection scaling are included; observation overdispersion is excluded
+from these bands. Prevalence is microscopy prevalence. These curves use dmeq's
+default demography, so use a fit with `mortality_csv: null`.

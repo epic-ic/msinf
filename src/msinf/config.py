@@ -42,7 +42,13 @@ class NumpyroConfig:
     #   whose parameters have no known-good values to init to
     # - "default": NumPyro default initializer
     # - "pathfinder": seed each chain from a draw of a Pathfinder approximation
+    # - "griffin_jitter": the "griffin" starts for every site that has one,
+    #   displaced per chain by init_jitter on the unconstrained scale, and
+    #   init_to_median for the rest -- so it also serves a candidate model
     init_strategy: str = "griffin"
+    # Standard deviation of the per-chain displacement "griffin_jitter" applies,
+    # on the unconstrained scale (a log or logit for most sites).
+    init_jitter: float = 0.5
     # Which backend produces the posterior: mcmc | pathfinder | fullrank.
     # "mcmc" runs whichever kernel `sampler` names; the variational backends
     # ignore `sampler`.
@@ -81,6 +87,11 @@ class NumpyroConfig:
     seed: int = 42
     # Progress bars are noise in a child process; the Hydra path keeps them.
     progress_bar: bool = True
+    # Biting-heterogeneity quadrature nodes for the Griffin curves. dmeq's own
+    # default is 10, which ripples the curves in log EIR and gives log_eir
+    # spurious modes (see msinf.curves.DEFAULT_HET_NODES); 10 reproduces runs
+    # from before this option exactly.
+    het_nodes: int = 40
 
 
 def resolve_priors(prior_family: str) -> dict[str, PriorSpec]:
@@ -167,7 +178,7 @@ def griffin_refit_init_values(
     active_set = set(active_core_params)
 
     for k, v in griffin_theta_init.items():
-        if (k in CORE_PARAMS and k not in active_set):
+        if k in CORE_PARAMS and k not in active_set:
             continue
         values[k] = asfloat(v)
 

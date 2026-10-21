@@ -23,9 +23,11 @@ either simply ignores them.
 """
 
 from collections.abc import Callable
+from functools import lru_cache, partial
 from typing import NamedTuple
 
 import jax.numpy as jnp
+import numpy as np
 from dmeq import default_parameters, solve
 
 from .config import sample_param
@@ -87,20 +89,52 @@ def griffin_parameters(
 _OBSERVATIONAL_PARAMS: tuple[str, ...] = ("rW", "rP")
 
 
-def griffin_curves(params, log_eir, ft, ages, prop, mu):
+#: Gauss-Hermite nodes dmeq integrates biting heterogeneity over when it is
+#: handed none of its own.
+DMEQ_HET_NODES = 10
+
+#: Nodes the Griffin provider asks dmeq for. Ten is too few: the nodes sit
+#: ~1.25 apart in log EIR (sqrt(s2) = 1.29), each node's curve has a sharp
+#: immunity threshold, and their weighted sum ripples with that period. The
+#: ripple puts spurious modes in the log_eir posterior -- 9 of the 23 sites at
+#: 10 nodes, one up to 18 nats deep -- and is gone by 40, which agrees with 100
+#: to ~0.01 per person-year.
+DEFAULT_HET_NODES = 40
+
+
+@lru_cache
+def het_quadrature(n_nodes: int) -> tuple[np.ndarray, np.ndarray]:
+    """Probabilists' Gauss-Hermite nodes and weights for E_{Z~N(0,1)}[g(Z)].
+
+    The same family dmeq hardcodes for its ten (``hermegauss(10)``, weights
+    normalised to sum to one), so only the node count changes.
+    """
+    z, w = np.polynomial.hermite_e.hermegauss(n_nodes)
+    return z, w / np.sqrt(2.0 * np.pi)
+
+
+def griffin_curves(params, log_eir, ft, ages, prop, mu, het_nodes: int = DEFAULT_HET_NODES):
     """Solve the Griffin equilibrium model for one site.
 
     ``prop`` is accepted and ignored: ``dmeq`` recomputes the same age
     proportions internally from ``mu``, and the model uses the ``prop`` passed
     in here for the age-bin averaging so that the demography is fixed
     scaffolding rather than something the solve returns.
+
+    ``het_nodes`` is the biting-heterogeneity quadrature size (see
+    :data:`DEFAULT_HET_NODES`). ``DMEQ_HET_NODES`` leaves dmeq on its own
+    hardcoded grid, so runs from before this option reproduce exactly.
     """
     del prop
     p = dict(params)
     p["EIR"] = jnp.exp(log_eir)
     p["ft"] = ft
     p["eta"] = mu
-    out = solve(p, dtype=FloatT(), age_bins_years=ages)
+    quadrature = {}
+    if het_nodes != DMEQ_HET_NODES:
+        z, w = het_quadrature(int(het_nodes))
+        quadrature = {"gh_nodes": z, "gh_weights": w}
+    out = solve(p, dtype=FloatT(), age_bins_years=ages, **quadrature)
     # Row 1 is dmeq's PCR prevalence, which nothing observes; it is not returned.
     return out[0, :], out[2, :]
 
@@ -109,9 +143,10 @@ def griffin_provider(
     priors: dict[str, PriorSpec],
     active_core_params: tuple[str, ...] = CORE_PARAMS,
     fixed_core_values: dict[str, float] | None = None,
+    het_nodes: int = DEFAULT_HET_NODES,
 ) -> CurveProvider:
     """The incumbent model as a :class:`CurveProvider`."""
     return CurveProvider(
         parameters=griffin_parameters(priors, active_core_params, fixed_core_values),
-        curves=griffin_curves,
+        curves=partial(griffin_curves, het_nodes=het_nodes),
     )

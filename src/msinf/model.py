@@ -12,6 +12,7 @@ The model reads no configuration. Everything it needs -- including the resolved
 prior specs -- arrives through :func:`build_model_kwargs`.
 """
 
+from functools import partial
 from pathlib import Path
 
 import jax
@@ -20,6 +21,7 @@ import numpy as np
 import numpyro
 import numpyro.distributions as dist
 import pandas as pd
+from numpyro.distributions import biject_to
 from numpyro.infer.initialization import init_to_median, init_to_value
 
 from .age_grid import GRIFFIN_AGE_GRID
@@ -247,11 +249,12 @@ def build_model_kwargs(
                 )
             ref_means = load_reference_means(Path(cfg.reference_draws_csv))
             fixed_core_values = {p: ref_means[p] for p in inactive_core_params}
-        provider = griffin_provider(priors, active_core_params, fixed_core_values)
+        provider = griffin_provider(priors, active_core_params, fixed_core_values, het_nodes=cfg.het_nodes)
     elif str(cfg.init_strategy).strip().lower() == "griffin":
         raise ValueError(
             "init_strategy='griffin' initialises by Griffin's parameter names, which a custom "
-            "curve provider does not have. Use init_strategy='median'."
+            "curve provider does not have. Use init_strategy='median', or 'griffin_jitter' to "
+            "start the sites it shares with Griffin from Griffin's values."
         )
 
     df = load_observed_data(Path(cfg.data_csv))
@@ -329,7 +332,41 @@ def model_kwargs_for_sampler(model_kwargs: dict) -> dict:
 #: Ways to start a fit. ``pathfinder`` is not a NumPyro initializer -- it runs a
 #: BlackJAX Pathfinder approximation first and seeds each chain from a draw of
 #: it, so it is resolved by :mod:`msinf.fit` and not here.
-INIT_STRATEGIES = ("griffin", "median", "default", "pathfinder")
+INIT_STRATEGIES = ("griffin", "griffin_jitter", "median", "default", "pathfinder")
+
+
+def init_to_jittered_value(site=None, values=None, scale=0.5, init_strategy=init_to_median):
+    """``init_to_value``, displaced per chain by ``scale`` on the unconstrained scale.
+
+    ``init_to_value`` starts every chain at one point, and chains that cannot
+    disagree about where they started cannot show a posterior with two modes:
+    under the study split the Dicko Doneguebougou EIR has two, about 50 and
+    about 320, that fit the training rows equally well. Each chain draws its
+    displacement from its own init key, so the starts differ between chains and
+    are reproducible within one.
+
+    A site with no value, with a value of the wrong shape, or whose value falls
+    outside its support (a candidate model reusing a Griffin name for something
+    else) falls back to ``init_strategy``.
+    """
+    if site is None:
+        return partial(init_to_jittered_value, values=values or {}, scale=scale, init_strategy=init_strategy)
+    if (
+        site["type"] == "sample"
+        and not site["is_observed"]
+        and site["name"] in values
+        and not site["fn"].support.is_discrete
+    ):
+        value = jnp.asarray(values[site["name"]])
+        shape = tuple(site["kwargs"].get("sample_shape", ())) + tuple(site["fn"].shape())
+        if value.shape == shape:
+            key_jitter, key_fallback = jax.random.split(site["kwargs"]["rng_key"])
+            transform = biject_to(site["fn"].support)
+            start = transform.inv(value)
+            moved = transform(start + scale * jax.random.normal(key_jitter, shape, dtype=start.dtype))
+            fallback = init_strategy(dict(site, kwargs={**site["kwargs"], "rng_key": key_fallback}))
+            return jnp.where(jnp.isfinite(start) & jnp.isfinite(moved), moved, fallback)
+    return init_strategy(site)
 
 
 def resolve_init_strategy(
@@ -343,6 +380,11 @@ def resolve_init_strategy(
 
     * ``griffin`` -- Griffin-refit fixed starts by parameter name. Only
       meaningful on the Hydra path, where the parameters *are* Griffin's.
+    * ``griffin_jitter`` -- the same starts, displaced per chain by
+      ``cfg.init_jitter`` (:func:`init_to_jittered_value`), for every sample
+      site that has one; ``init_to_median`` for the rest. Works for a candidate
+      model too: the observational scaffolding and any Griffin name it keeps
+      start where the incumbent does.
     * ``median`` -- ``init_to_median``. The name-free option: a candidate model
       invents its own parameters, so there are no known-good values to init to.
     * ``default`` -- NumPyro's own initializer, returned as ``None``.
@@ -358,18 +400,21 @@ def resolve_init_strategy(
         raise ValueError(f"init_strategy must be one of {set(INIT_STRATEGIES)}")
     del allow_pathfinder  # both paths resolve 'pathfinder' to where it starts
 
-    if init_mode == "griffin":
-        return init_to_value(
-            values=griffin_refit_init_values(
-                active_core_params=active_core_params,
-                log_eir_hat=np.asarray(model_kwargs["log_eir_hat"]),
-                ft_alpha=np.asarray(model_kwargs["ft_alpha"]),
-                ft_beta=np.asarray(model_kwargs["ft_beta"]),
-                n_study=model_kwargs["n_study"],
-                n_site=model_kwargs["n_site"],
-                n_age_groups=model_kwargs["n_age_groups"],
-            )
+    if init_mode in {"griffin", "griffin_jitter"}:
+        values = griffin_refit_init_values(
+            # A candidate provider has no active core set; offer every Griffin
+            # name and let the sites it actually samples pick theirs out.
+            active_core_params=active_core_params if init_mode == "griffin" else CORE_PARAMS,
+            log_eir_hat=np.asarray(model_kwargs["log_eir_hat"]),
+            ft_alpha=np.asarray(model_kwargs["ft_alpha"]),
+            ft_beta=np.asarray(model_kwargs["ft_beta"]),
+            n_study=model_kwargs["n_study"],
+            n_site=model_kwargs["n_site"],
+            n_age_groups=model_kwargs["n_age_groups"],
         )
+        if init_mode == "griffin":
+            return init_to_value(values=values)
+        return init_to_jittered_value(values=values, scale=cfg.init_jitter)
     if init_mode in {"median", "pathfinder"}:
         return init_to_median
     return None
