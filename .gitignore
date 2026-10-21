@@ -8,5 +8,6 @@ artifacts/
 *.csv
 *.parquet
 .DS_Store
+test.ipynb
 
 *.egg-info/
